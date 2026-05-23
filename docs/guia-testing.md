@@ -53,9 +53,75 @@ set -a && source .env && set +a
 BASE_URL=https://payments-demo.techforce.cl python3 demo/app.py
 ```
 
-## Notas técnicas
+## Testear el split completo (transfer real en test mode)
+
+En test mode el balance arranca en $0, lo que bloquea el transfer al alojamiento.
+Solución: simular un ingreso primero con el endpoint de Fintoc:
+
+```bash
+# 1. Simular ingreso de plata a la cuenta TrypoPMS
+curl -s -X POST https://api.fintoc.com/v2/simulate/receive_transfer \
+  -H "Authorization: Bearer $FINTOC_SECRET_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "account_number_id": "acno_3E8duaZmElIyXjJW1MnDkuoEdhY",
+    "amount": 100000,
+    "currency": "CLP",
+    "counterparty_holder_name": "Cliente Demo"
+  }'
+
+# 2. Verificar balance
+fintoc v2 accounts list
+
+# 3. Ejecutar transfer de split al alojamiento
+fintoc v2 transfers create \
+  --amount 40000 \
+  --currency CLP \
+  --account-id acc_3E8duZcU6ELPNeOUjoeaCOolKbj \
+  --counterparty-account-number 422159212 \
+  --counterparty-institution-id cl_banco_estado \
+  --counterparty-holder-id 41.614.850-3 \
+  --counterparty-account-type checking_account \
+  --comment "Split reserva DEMO-001 - alojamiento" \
+  --jws-private-key /home/ftt/github/Fintoc-Integracion/jws_private_key.pem
+```
+
+### Resultado del test completo (2026-05-23)
+
+| Paso | Detalle |
+|---|---|
+| Ingreso simulado | +$100.000 CLP → `tr_3E8uBEiJQJxVqymyIyLHODngu6c` |
+| Pago de reserva | $50.000 CLP (PI `pi_3E8n2b3dtJsIVsiHf6ERM5WzCPi`, status: succeeded) |
+| Transfer al alojamiento (80%) | -$40.000 → `tr_3E8uDVcGJphn0wc0oIzTen4tCKz`, status: pending |
+| Balance TrypoPMS final | $60.000 CLP |
+
+El transfer queda en `pending` en test mode — se procesa al día siguiente. En producción es casi inmediato.
+
+## Pendiente para producción
+
+Agregar en `demo/app.py` dentro del handler `payment_intent.succeeded` la llamada al transfer real:
+
+```python
+# En webhook(), dentro del if event["type"] == "payment_intent.succeeded":
+fintoc_post("/v2/transfers", {
+    "amount": split["alojamiento"],
+    "currency": pi["currency"],
+    "account_id": "acc_...",                        # cuenta TrypoPMS
+    "counterparty_account_number": "...",            # cuenta del alojamiento
+    "counterparty_institution_id": "cl_...",
+    "counterparty_holder_id": "...",                 # RUT del alojamiento
+    "counterparty_account_type": "checking_account",
+    "comment": f"Split reserva {reserva}",
+})
+```
+
+Requiere: JWS key configurada en Fintoc dashboard + balance > 0 (entra automático con pagos reales).
+
+## Notas técnicas aprendidas
 
 - La API de Fintoc usa **Bearer token** (no Basic Auth como dice el README del CLI)
 - `success_url` y `cancel_url` deben ser **HTTPS** — no acepta `http://localhost`
-- El split en test mode se calcula pero el transfer real falla por balance $0
+- `v2 transfers create` requiere JWS key registrada en el dashboard
+- El split se puede testear end-to-end en test mode usando `simulate/receive_transfer` primero
 - Webhook secret: `whsec_test_sDQqWhPbd4StPXgeQ33qwnEv` (endpoint `we_l0vpOAqCe7jO8jEK`)
+- Cuenta TrypoPMS: `acc_3E8duZcU6ELPNeOUjoeaCOolKbj` | Account number: `acno_3E8duaZmElIyXjJW1MnDkuoEdhY`
