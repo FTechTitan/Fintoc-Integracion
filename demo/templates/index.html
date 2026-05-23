@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>TrypoPMS — Demo Pago</title>
+  <style>
+    body { font-family: sans-serif; max-width: 480px; margin: 60px auto; padding: 0 20px; }
+    h1 { font-size: 1.4rem; margin-bottom: 4px; }
+    .sub { color: #666; margin-bottom: 32px; font-size: .9rem; }
+    label { display: block; margin-bottom: 6px; font-size: .85rem; color: #444; }
+    input { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px;
+            box-sizing: border-box; margin-bottom: 16px; font-size: 1rem; }
+    button { width: 100%; padding: 12px; background: #0057ff; color: #fff;
+             border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; }
+    button:hover { background: #0044cc; }
+    .split-preview { background: #f5f5f5; border-radius: 8px; padding: 14px 16px;
+                     margin-top: 24px; font-size: .85rem; display: none; }
+    .split-preview span { font-weight: 600; }
+    .badge { display: inline-block; background: #fff3cd; color: #7a5200;
+             font-size: .75rem; padding: 2px 8px; border-radius: 12px; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <h1>TrypoPMS — Pago de Reserva</h1>
+  <div class="sub">Demo modo prueba · Fintoc</div>
+  <div class="badge">TEST MODE</div>
+
+  <label>Monto (CLP)</label>
+  <input type="number" id="monto" value="50000" min="1000">
+
+  <label>Email del cliente</label>
+  <input type="email" id="email" placeholder="cliente@email.com">
+
+  <label>ID Reserva</label>
+  <input type="text" id="reserva" value="DEMO-001">
+
+  <label>Nombre alojamiento</label>
+  <input type="text" id="alojamiento" value="Cabaña El Pino">
+
+  <button onclick="pagar()">Pagar con Fintoc</button>
+
+  <div class="split-preview" id="split">
+    <div>Desglose del split (20% TrypoPMS / 80% alojamiento):</div>
+    <div style="margin-top:8px">
+      TrypoPMS: <span id="s-trypo"></span> CLP &nbsp;|&nbsp;
+      Alojamiento: <span id="s-aloj"></span> CLP
+    </div>
+  </div>
+
+  <script>
+    async function pagar() {
+      const monto = parseInt(document.getElementById('monto').value);
+      const payload = {
+        monto,
+        email:              document.getElementById('email').value,
+        reserva_id:         document.getElementById('reserva').value,
+        nombre_alojamiento: document.getElementById('alojamiento').value,
+      };
+
+      const res  = await fetch('/crear-pago', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      document.getElementById('s-trypo').textContent = data.split.trypo.toLocaleString('es-CL');
+      document.getElementById('s-aloj').textContent  = data.split.alojamiento.toLocaleString('es-CL');
+      document.getElementById('split').style.display = 'block';
+
+      setTimeout(() => window.location.href = data.checkout_url, 800);
+    }
+  </script>
+</body>
+</html>
